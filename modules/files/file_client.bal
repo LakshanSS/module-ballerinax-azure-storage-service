@@ -254,11 +254,11 @@ public client class FileClient {
     # + azureDirectoryPath - Path of the azure directory
     # + return - If success, returns true.  Else returns error
     @display {label: "Write content to file"}
-    remote function putRange(@display {label: "File share name"} string fileShareName,
-                             @display {label: "Local file path"} string localFilePath, 
-                             @display {label: "Name of the file in azure"} string azureFileName, 
-                             @display {label: "Azure directory path"} string? azureDirectoryPath = ()) 
-                             returns @tainted @display {label: "Status"} boolean|error {
+    isolated remote function putRange(@display {label: "File share name"} string fileShareName,
+                                      @display {label: "Local file path"} string localFilePath, 
+                                      @display {label: "Name of the file in azure"} string azureFileName, 
+                                      @display {label: "Azure directory path"} string? azureDirectoryPath = ()) 
+                                      returns @tainted @display {label: "Status"} boolean|error {
         file:MetaData fileMetaData = check file:getMetaData(localFilePath);
         int fileSizeInByte = fileMetaData.size;
         return check putRangeInternal(self.httpClient, fileShareName, localFilePath, azureFileName, self.azureConfig, 
@@ -444,11 +444,11 @@ public client class FileClient {
     # + azureFileName - The name of the file in Azure
     # + azureDirectoryPath - Directory path in Azure
     # + return - If success, returns true.  Else returns error
-    remote function directUpload(@display {label: "File share name"} string fileShareName, 
-                                 @display {label: "Local file path"} string localFilePath, 
-                                 @display {label: "File name in Azure"} string azureFileName, 
-                                 @display {label: "Azure directory path"} string? azureDirectoryPath = ()) 
-                                 returns @tainted @display {label: "File uploaded"} boolean|error {
+    isolated remote function directUpload(@display {label: "File share name"} string fileShareName, 
+                                          @display {label: "Local file path"} string localFilePath, 
+                                          @display {label: "File name in Azure"} string azureFileName, 
+                                          @display {label: "Azure directory path"} string? azureDirectoryPath = ()) 
+                                          returns @tainted @display {label: "File uploaded"} boolean|error {
         file:MetaData fileMetaData = check file:getMetaData(localFilePath);
         int fileSizeInByte = fileMetaData.size;
         var createFileResponse = self->createFile(fileShareName, azureFileName, fileSizeInByte, azureDirectoryPath);

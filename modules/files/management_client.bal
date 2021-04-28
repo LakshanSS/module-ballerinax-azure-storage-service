@@ -45,9 +45,10 @@ public client class ManagementClient {
 
     # Lists all the file shares in the  storage account.
     #
+    # + uriParameters - Optional values for list shares.
     # + return - If success, returns ShareList record with basic details.  Else returns an error.
     @display {label: "List file shares"}
-    remote isolated function listShares(@display {label: "Azure Storage File Client"} ListShareURIParameters 
+    remote isolated function listShares(@display {label: "List Share Optional values"} ListShareURIParameters 
                                         uriParameters = {}) returns @tainted @display {label: "Share list"} SharesList|
                                         error {
         string? appendedUriParameters = setOptionalURIParametersFromRecord(uriParameters);

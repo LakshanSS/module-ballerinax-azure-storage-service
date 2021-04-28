@@ -277,9 +277,9 @@ isolated function createFileInternal(http:Client httpClient, string fileShareNam
 # + azureConfig - Azure Configuration
 # + azureDirectoryPath - Directory path in Azure to the file
 # + return - if success returns true else the error
-function putRangeInternal(http:Client httpClient, string fileShareName, string localFilePath, string azureFileName, 
-                            AzureFileServiceConfiguration azureConfig, int fileSizeInByte, 
-                            string? azureDirectoryPath = ()) returns @tainted boolean|error {
+isolated function putRangeInternal(http:Client httpClient, string fileShareName, string localFilePath, 
+                                   string azureFileName, AzureFileServiceConfiguration azureConfig, int fileSizeInByte, 
+                                   string? azureDirectoryPath = ()) returns @tainted boolean|error {
     string requestPath = SLASH + fileShareName;
     requestPath = azureDirectoryPath is () ? requestPath : (requestPath + SLASH + azureDirectoryPath);
     requestPath = requestPath + SLASH + azureFileName + QUESTION_MARK + PUT_RANGE_PATH;
@@ -288,49 +288,96 @@ function putRangeInternal(http:Client httpClient, string fileShareName, string l
     boolean isFirstRequest = true;
     int remainingBytesAmount = fileSizeInByte;
     boolean updateStatusFlag = false;
-    error? e = fileStream.forEach(function(io:Block byteBlock) {
-        if (remainingBytesAmount > MAX_UPLOADING_BYTE_SIZE) {
-            http:Request request = new;
-            addPutRangeMandatoryHeaders(index, request, (index + MAX_UPLOADING_BYTE_SIZE), byteBlock);
-            if (azureConfig.authorizationMethod === ACCESS_KEY) {
-                addPutRangeHeadersForSharedKey(request, fileShareName, azureFileName, azureConfig, azureDirectoryPath);      
+
+    if (fileStream is stream<io:Block>) {
+        foreach io:Block byteBlock in fileStream {
+            if (remainingBytesAmount > MAX_UPLOADING_BYTE_SIZE) {
+                http:Request request = new;
+                addPutRangeMandatoryHeaders(index, request, (index + MAX_UPLOADING_BYTE_SIZE), byteBlock);
+                if (azureConfig.authorizationMethod === ACCESS_KEY) {
+                    addPutRangeHeadersForSharedKey(request, fileShareName, azureFileName, azureConfig, 
+                        azureDirectoryPath);      
+                } else {
+                    if (isFirstRequest) {
+                        string tokenWithAmphasand = AMPERSAND.concat(azureConfig.accessKeyOrSAS.substring(1));
+                        requestPath = requestPath.concat(tokenWithAmphasand);
+                        isFirstRequest = false;
+                    } 
+                }
+                http:Response response = <http:Response> checkpanic httpClient->put(requestPath, request);
+                if (response.statusCode === http:STATUS_CREATED) {
+                    index = index + MAX_UPLOADING_BYTE_SIZE;
+                    remainingBytesAmount = remainingBytesAmount - MAX_UPLOADING_BYTE_SIZE;
+                }
+            } else if (remainingBytesAmount < MAX_UPLOADING_BYTE_SIZE) {
+                byte[] lastUploadRequest = array:slice(byteBlock, 0, fileSizeInByte - index);
+                http:Request lastRequest = new;
+                addPutRangeMandatoryHeaders(index, lastRequest, fileSizeInByte, lastUploadRequest);
+                if (azureConfig.authorizationMethod === ACCESS_KEY) {
+                    addPutRangeHeadersForSharedKey(lastRequest, fileShareName, azureFileName, azureConfig, 
+                        azureDirectoryPath);  
+                } else {
+                    if (isFirstRequest) {
+                        string tokenWithAmphasand = AMPERSAND.concat(azureConfig.accessKeyOrSAS.substring(1));
+                        requestPath = requestPath.concat(tokenWithAmphasand);
+                        isFirstRequest = false;
+                    } 
+                }
+                http:Response responseLast = <http:Response> checkpanic httpClient->put(requestPath, lastRequest);
+                if (responseLast.statusCode === http:STATUS_CREATED) {
+                    updateStatusFlag = true;
+                } else {
+                    xml errorMessage = checkpanic responseLast.getXmlPayload();
+                    log:printError(errorMessage.toString(), statusCode = responseLast.statusCode);
+                }
             } else {
-                if (isFirstRequest) {
-                    string tokenWithAmphasand = AMPERSAND.concat(azureConfig.accessKeyOrSAS.substring(1));
-                    requestPath = requestPath.concat(tokenWithAmphasand);
-                    isFirstRequest = false;
-                } 
-            }
-            http:Response response = <http:Response> checkpanic httpClient->put(requestPath, request);
-            if (response.statusCode === http:STATUS_CREATED) {
-                index = index + MAX_UPLOADING_BYTE_SIZE;
-                remainingBytesAmount = remainingBytesAmount - MAX_UPLOADING_BYTE_SIZE;
-            }
-        } else if (remainingBytesAmount < MAX_UPLOADING_BYTE_SIZE) {
-            byte[] lastUploadRequest = array:slice(byteBlock, 0, fileSizeInByte - index);
-            http:Request lastRequest = new;
-            addPutRangeMandatoryHeaders(index, lastRequest, fileSizeInByte, lastUploadRequest);
-            if (azureConfig.authorizationMethod === ACCESS_KEY) {
-                addPutRangeHeadersForSharedKey(lastRequest, fileShareName, azureFileName, azureConfig, 
-                    azureDirectoryPath);  
-            } else {
-                if (isFirstRequest) {
-                    string tokenWithAmphasand = AMPERSAND.concat(azureConfig.accessKeyOrSAS.substring(1));
-                    requestPath = requestPath.concat(tokenWithAmphasand);
-                    isFirstRequest = false;
-                } 
-            }
-            http:Response responseLast = <http:Response> checkpanic httpClient->put(requestPath, lastRequest);
-            if (responseLast.statusCode === http:STATUS_CREATED) {
                 updateStatusFlag = true;
-            } else {
-                xml errorMessage = checkpanic responseLast.getXmlPayload();
-                log:printError(errorMessage.toString(), statusCode = responseLast.statusCode);
             }
-        } else {
-            updateStatusFlag = true;
         }
-    });
+    }
+    // error? e = fileStream.forEach(function(io:Block byteBlock) {
+    //     if (remainingBytesAmount > MAX_UPLOADING_BYTE_SIZE) {
+    //         http:Request request = new;
+    //         addPutRangeMandatoryHeaders(index, request, (index + MAX_UPLOADING_BYTE_SIZE), byteBlock);
+    //         if (azureConfig.authorizationMethod === ACCESS_KEY) {
+    //             addPutRangeHeadersForSharedKey(request, fileShareName, azureFileName, azureConfig, azureDirectoryPath);      
+    //         } else {
+    //             if (isFirstRequest) {
+    //                 string tokenWithAmphasand = AMPERSAND.concat(azureConfig.accessKeyOrSAS.substring(1));
+    //                 requestPath = requestPath.concat(tokenWithAmphasand);
+    //                 isFirstRequest = false;
+    //             } 
+    //         }
+    //         http:Response response = <http:Response> checkpanic httpClient->put(requestPath, request);
+    //         if (response.statusCode === http:STATUS_CREATED) {
+    //             index = index + MAX_UPLOADING_BYTE_SIZE;
+    //             remainingBytesAmount = remainingBytesAmount - MAX_UPLOADING_BYTE_SIZE;
+    //         }
+    //     } else if (remainingBytesAmount < MAX_UPLOADING_BYTE_SIZE) {
+    //         byte[] lastUploadRequest = array:slice(byteBlock, 0, fileSizeInByte - index);
+    //         http:Request lastRequest = new;
+    //         addPutRangeMandatoryHeaders(index, lastRequest, fileSizeInByte, lastUploadRequest);
+    //         if (azureConfig.authorizationMethod === ACCESS_KEY) {
+    //             addPutRangeHeadersForSharedKey(lastRequest, fileShareName, azureFileName, azureConfig, 
+    //                 azureDirectoryPath);  
+    //         } else {
+    //             if (isFirstRequest) {
+    //                 string tokenWithAmphasand = AMPERSAND.concat(azureConfig.accessKeyOrSAS.substring(1));
+    //                 requestPath = requestPath.concat(tokenWithAmphasand);
+    //                 isFirstRequest = false;
+    //             } 
+    //         }
+    //         http:Response responseLast = <http:Response> checkpanic httpClient->put(requestPath, lastRequest);
+    //         if (responseLast.statusCode === http:STATUS_CREATED) {
+    //             updateStatusFlag = true;
+    //         } else {
+    //             xml errorMessage = checkpanic responseLast.getXmlPayload();
+    //             log:printError(errorMessage.toString(), statusCode = responseLast.statusCode);
+    //         }
+    //     } else {
+    //         updateStatusFlag = true;
+    //     }
+    // });
     return updateStatusFlag;
 }
 

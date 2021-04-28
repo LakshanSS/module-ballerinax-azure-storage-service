@@ -671,7 +671,7 @@ public client class BlobClient {
     # + filePath - Path to the file which should be uploaded
     # + return - error if unsuccessful
     @display {label: "Upload a blob using file path"}
-    remote function uploadLargeBlob(@display {label: "Container name"} string containerName, 
+    isolated remote function uploadLargeBlob(@display {label: "Container name"} string containerName, 
                                     @display {label: "Blob name"} string blobName, 
                                     @display {label: "File path"} string filePath) returns @tainted error? {
         file:MetaData fileMetaData = check file:getMetaData(filePath);
@@ -682,22 +682,40 @@ public client class BlobClient {
         int remainingBytes = fileSize; // Remaining bytes to upload
         string[] blockIdArray = []; // List of blockIds
 
-        var fileStream = check io:fileReadBlocksAsStream(filePath, MAX_BLOB_UPLOAD_SIZE);
-        error? e = fileStream.forEach(function(io:Block byteBlock) {
-            string blockId = blobName + COLON_SYMBOL + i.toString();
-            blockIdArray[i] = blockId;
+        stream<io:Block, io:Error?> fileStream = check io:fileReadBlocksAsStream(filePath, MAX_BLOB_UPLOAD_SIZE);
+        if (fileStream is stream<io:Block>) {
+            foreach io:Block byteBlock in fileStream {
+                string blockId = blobName + COLON_SYMBOL + i.toString();
+                blockIdArray[i] = blockId;
                     
-            if (remainingBytes < MAX_BLOB_UPLOAD_SIZE) {
-                byte[] lastByteArray = byteBlock.slice(0, remainingBytes);
-                _ = checkpanic self->putBlock(containerName, blobName, blockId, lastByteArray);
-                log:printInfo("Upload successful");
-            } else {
-                _ = checkpanic self->putBlock(containerName, blobName, blockId, byteBlock);
-                remainingBytes -= MAX_BLOB_UPLOAD_SIZE;
-                log:printInfo("Remaining bytes to upload: " + remainingBytes.toString() + "Bytes");
-                i += 1;  
-            }             
-        });
+                if (remainingBytes < MAX_BLOB_UPLOAD_SIZE) {
+                    byte[] lastByteArray = byteBlock.slice(0, remainingBytes);
+                    _ = checkpanic self->putBlock(containerName, blobName, blockId, lastByteArray);
+                    log:printInfo("Upload successful");
+                } else {
+                    _ = checkpanic self->putBlock(containerName, blobName, blockId, byteBlock);
+                    remainingBytes -= MAX_BLOB_UPLOAD_SIZE;
+                    log:printInfo("Remaining bytes to upload: " + remainingBytes.toString() + "Bytes");
+                    i += 1;  
+                }  
+            }
+        }
+        
+        // error? e = fileStream.forEach(function(io:Block byteBlock) {
+        //     string blockId = blobName + COLON_SYMBOL + i.toString();
+        //     blockIdArray[i] = blockId;
+                    
+        //     if (remainingBytes < MAX_BLOB_UPLOAD_SIZE) {
+        //         byte[] lastByteArray = byteBlock.slice(0, remainingBytes);
+        //         _ = checkpanic self->putBlock(containerName, blobName, blockId, lastByteArray);
+        //         log:printInfo("Upload successful");
+        //     } else {
+        //         _ = checkpanic self->putBlock(containerName, blobName, blockId, byteBlock);
+        //         remainingBytes -= MAX_BLOB_UPLOAD_SIZE;
+        //         log:printInfo("Remaining bytes to upload: " + remainingBytes.toString() + "Bytes");
+        //         i += 1;  
+        //     }             
+        // });
         _ = check self->putBlockList(containerName, blobName, blockIdArray);     
     }
 }
